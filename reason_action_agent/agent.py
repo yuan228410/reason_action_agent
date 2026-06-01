@@ -11,6 +11,8 @@ from reason_action_agent.exceptions import AgentException, ModelOutputError
 from reason_action_agent.message_manager import MessageManager
 from reason_action_agent.model_clients import create_model_client
 from reason_action_agent.prompts import react_system_prompt_template
+from reason_action_agent.rich_display import display
+from reason_action_agent.session_exporter import SessionExporter
 from reason_action_agent.session_logger import SessionLogger
 from reason_action_agent.tag_parser import TagParser
 from reason_action_agent.tools import ToolRegistry, get_default_tools
@@ -35,6 +37,7 @@ class ReActAgent:
         )
         self.logger = logger or self._init_logger()
         self.parser = TagParser()
+        self.exporter = SessionExporter(project_dir=self.config.project_directory)
         
         self._log("agent_initialized", {
             "model": self.config.model.name,
@@ -58,6 +61,10 @@ class ReActAgent:
     
     def run(self, user_input: str) -> str:
         """执行推理循环"""
+        # 清空导出器
+        self.exporter.clear()
+        self.exporter.add_user_input(user_input)
+        
         # 初始化消息
         system_prompt = self._render_system_prompt()
         messages = MessageManager(system_prompt)
@@ -69,15 +76,19 @@ class ReActAgent:
         # 推理循环
         while True:
             # 调用模型
+            display.thinking()
             content = self._call_model(messages)
             
             # 提取思考
             if thought := self.parser.extract(content, "thought"):
-                print(f"\n\n💭 Thought: {thought}")
+                display.thought(thought)
+                self.exporter.add_thought(thought)
                 self._log("thought", thought)
             
             # 检查是否结束
             if final_answer := self.parser.extract(content, "final_answer"):
+                display.final_answer(final_answer)
+                self.exporter.add_final_answer(final_answer)
                 self._log("final_answer", final_answer)
                 return final_answer
             
@@ -96,11 +107,11 @@ class ReActAgent:
             except AgentException as e:
                 raise ModelOutputError(f"Action 解析失败: {e}", content)
             
-            formatted = self.parser.format_tool_call(tool_name, args, kwargs)
-            print(f"\n\n🔧 Action: {formatted}")
+            display.action(tool_name, args, kwargs)
+            self.exporter.add_action(tool_name, args, kwargs)
             self._log("action", {
                 "raw": action,
-                "formatted": formatted,
+                "formatted": self.parser.format_tool_call(tool_name, args, kwargs),
                 "tool_name": tool_name,
                 "args": args,
                 "kwargs": kwargs,
@@ -109,11 +120,14 @@ class ReActAgent:
             # 安全确认
             if tool_name == "run_terminal_command":
                 if not self._confirm_command():
+                    display.warning("操作被用户取消")
+                    self.exporter.add_error("操作被用户取消")
                     return "操作被用户取消"
             
             # 执行工具
             observation = self._execute_tool(tool_name, args, kwargs)
-            print(f"\n\n🔍 Observation: {observation}")
+            display.observation(observation)
+            self.exporter.add_observation(observation)
             
             # 添加观察结果
             messages.add_observation(observation)
@@ -121,7 +135,8 @@ class ReActAgent:
     
     def _confirm_command(self) -> bool:
         """确认是否执行终端命令"""
-        should_continue = input("\n\n是否继续？（Y/N）").lower()
+        display.warning("即将执行终端命令，请确认！")
+        should_continue = display.console.input("\n[yellow]是否继续？(Y/N): [/yellow]").lower()
         self._log("terminal_command_confirmation", should_continue)
         return should_continue == "y"
     
@@ -180,16 +195,15 @@ class ReActAgent:
         """处理模型输出格式异常"""
         self._log("invalid_model_output", {"content": content})
         
-        # 打印原始输出，方便调试
-        print(f"\n\n⚠️  模型输出格式异常:")
-        print(f"{'─' * 60}")
-        print(content[:500] + ("..." if len(content) > 500 else ""))
-        print(f"{'─' * 60}")
+        # 显示原始输出（截断）
+        truncated = content[:500] + ("..." if len(content) > 500 else "")
+        display.warning("模型输出格式异常")
+        display.code(truncated, language="text")
         
         # 尝试智能修复常见问题
         fixed_content = self._try_fix_output(content)
         if fixed_content:
-            print("\n🔧 尝试自动修复...")
+            display.info("尝试自动修复...")
             # 移除错误的助手消息
             messages.messages.pop()  # 移除刚才添加的错误消息
             # 添加修复后的消息

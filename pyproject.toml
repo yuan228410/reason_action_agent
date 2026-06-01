@@ -10,4 +10,6 @@ dependencies = [
     "openai>=2.38.0",
     "python-dotenv>=1.2.2",
     "requests>=2.32.0",
+    "rich>=13.7.0",
+    "prompt-toolkit>=3.0.0",
 ]
