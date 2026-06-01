@@ -16,6 +16,8 @@ class CommandCompleter(Completer):
         self.commands: Dict[str, tuple] = {
             "/help": ("显示帮助信息", ""),
             "/tools": ("查看工具列表", ""),
+            "/skills": ("查看技能列表", ""),
+            "/skill": ("技能管理", "install|load|info|create|run|read|uninstall"),
             "/themes": ("查看主题列表", ""),
             "/theme": ("切换主题", "<主题名>"),
             "/export": ("导出会话", "md|html"),
@@ -73,6 +75,41 @@ class CommandCompleter(Completer):
                                 display=fmt,
                                 display_meta="导出格式",
                             )
+                
+                # skill 命令补全子命令
+                elif cmd == "/skill":
+                    subcmds = ["install", "load", "info", "create", "run", "read", "uninstall"]
+                    for subcmd in subcmds:
+                        if subcmd.startswith(partial):
+                            yield Completion(
+                                subcmd,
+                                start_position=-len(partial),
+                                display=subcmd,
+                                display_meta="子命令",
+                            )
+            
+            elif len(parts) >= 3:
+                # 补全技能名（适用于 load/info/run/read/uninstall）
+                cmd = parts[0]
+                subcmd = parts[1] if len(parts) > 1 else ""
+                partial = parts[-1]
+                
+                if cmd == "/skill" and subcmd in ["load", "info", "run", "read", "uninstall"]:
+                    # 动态获取技能列表
+                    try:
+                        from reason_action_agent.skill_manager import SkillManager
+                        manager = SkillManager()
+                        skills = manager.list_skills()
+                        for skill in skills:
+                            if skill.name.startswith(partial):
+                                yield Completion(
+                                    skill.name,
+                                    start_position=-len(partial),
+                                    display=skill.name,
+                                    display_meta=f"技能 (v{skill.metadata.version})",
+                                )
+                    except Exception:
+                        pass
 
 
 class InputManager:
