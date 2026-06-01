@@ -116,8 +116,16 @@ def handle_slash_command(cmd: str, args: str, agent: ReActAgent) -> bool:
         display.tool_list(agent.registry.list_tools())
         return False
     
-    # 清屏
+    # 清空历史
     if cmd == "/clear":
+        agent.messages = None
+        agent.exporter.clear()
+        display.clear()
+        display.success("已清空对话历史")
+        return False
+    
+    # 清屏
+    if cmd == "/cls":
         display.clear()
         return False
     
@@ -172,7 +180,8 @@ def show_help():
   [cyan]/theme <name>[/cyan]    切换主题（Tab 补全）
   [cyan]/export <fmt>[/cyan]    导出会话（md/html，Tab 补全）
   [cyan]/stats[/cyan]           查看执行统计
-  [cyan]/clear[/cyan]           清屏
+  [cyan]/clear[/cyan]           清空对话历史并清屏
+  [cyan]/cls[/cyan]             仅清屏
   [cyan]/quit, /q[/cyan]        退出程序
 
 [bold]使用示例:[/bold]
@@ -186,6 +195,7 @@ def show_help():
 
   • 输入 [cyan]/[/cyan] 后按 [bold]Tab[/bold] 自动补全命令
   • 命令参数也支持 Tab 补全（主题名、导出格式）
+  • 对话历史会自动保留，直到使用 [cyan]/clear[/cyan] 清空
   • 文件路径建议使用绝对路径
   • 终端命令执行前会要求确认
         """,

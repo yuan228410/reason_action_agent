@@ -39,6 +39,9 @@ class ReActAgent:
         self.parser = TagParser()
         self.exporter = SessionExporter(project_dir=self.config.project_directory)
         
+        # 持久化消息管理器
+        self.messages = None
+        
         self._log("agent_initialized", {
             "model": self.config.model.name,
             "protocol": self.config.model.protocol,
@@ -65,19 +68,23 @@ class ReActAgent:
         self.exporter.clear()
         self.exporter.add_user_input(user_input)
         
-        # 初始化消息
-        system_prompt = self._render_system_prompt()
-        messages = MessageManager(system_prompt)
-        messages.add_question(user_input)
+        # 初始化或复用消息管理器
+        if self.messages is None:
+            system_prompt = self._render_system_prompt()
+            self.messages = MessageManager(system_prompt)
+        
+        # 添加用户问题
+        self.messages.add_question(user_input)
         
         self._log("user_input", user_input)
-        self._log_text("SYSTEM_PROMPT", system_prompt)
+        if len(self.messages) <= 2:  # 首次调用
+            self._log_text("SYSTEM_PROMPT", self.messages.messages[0]["content"])
         
         # 推理循环
         while True:
             # 调用模型
             display.thinking()
-            content = self._call_model(messages)
+            content = self._call_model(self.messages)
             
             # 提取思考
             if thought := self.parser.extract(content, "thought"):
@@ -96,7 +103,7 @@ class ReActAgent:
             action = self.parser.extract(content, "action")
             if not action:
                 # 模型输出格式异常，尝试智能修复
-                error_msg = self._handle_invalid_output(content, messages)
+                error_msg = self._handle_invalid_output(content, self.messages)
                 if error_msg:
                     # 添加错误提示，让模型重新输出
                     continue
@@ -130,7 +137,7 @@ class ReActAgent:
             self.exporter.add_observation(observation)
             
             # 添加观察结果
-            messages.add_observation(observation)
+            self.messages.add_observation(observation)
             self._log("observation", {"tool_name": tool_name, "observation": observation})
     
     def _confirm_command(self) -> bool:
@@ -154,7 +161,6 @@ class ReActAgent:
     
     def _call_model(self, messages: MessageManager) -> str:
         """调用模型"""
-        print("\n\n正在请求模型，请稍等...")
         msg_list = list(messages)
         self._log("model_request", msg_list)
         
