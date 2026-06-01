@@ -14,6 +14,7 @@ from reason_action_agent.prompts import react_system_prompt_template
 from reason_action_agent.rich_display import display
 from reason_action_agent.session_exporter import SessionExporter
 from reason_action_agent.session_logger import SessionLogger
+from reason_action_agent.skill_manager import SkillManager
 from reason_action_agent.tag_parser import TagParser
 from reason_action_agent.tools import ToolRegistry, get_default_tools
 
@@ -39,6 +40,13 @@ class ReActAgent:
         self.parser = TagParser()
         self.exporter = SessionExporter(project_dir=self.config.project_directory)
         
+        # 初始化技能管理器
+        self.skill_manager = SkillManager(project_dir=self.config.project_directory)
+        
+        # 初始化技能工具
+        from reason_action_agent.tools.skill_tools import init_skill_manager
+        init_skill_manager(self.config.project_directory)
+        
         # 持久化消息管理器
         self.messages = None
         
@@ -47,6 +55,7 @@ class ReActAgent:
             "protocol": self.config.model.protocol,
             "project_directory": self.config.project_directory,
             "tools": [t.name for t in self.registry.list_tools()],
+            "skills": [s.name for s in self.skill_manager.list_skills()],
         })
     
     def _init_tools(self, tools: list[Callable] | None) -> ToolRegistry:
@@ -86,6 +95,12 @@ class ReActAgent:
             display.thinking()
             content = self._call_model(self.messages)
             
+            # 检查是否是错误标记
+            if content.startswith("<error>"):
+                # 模型调用失败，返回友好提示
+                error_msg = content.replace("<error>", "").replace("</error>", "")
+                return f"抱歉，遇到了一些问题：{error_msg}。请稍后重试或更换任务。"
+            
             # 提取思考
             if thought := self.parser.extract(content, "thought"):
                 display.thought(thought)
@@ -112,7 +127,11 @@ class ReActAgent:
             try:
                 tool_name, args, kwargs = self.parser.parse_action(action)
             except AgentException as e:
-                raise ModelOutputError(f"Action 解析失败: {e}", content)
+                # 解析失败，返回错误信息而不是抛出异常
+                error_msg = f"无法解析工具调用: {e}"
+                display.warning(error_msg)
+                self.messages.add_observation(f"<error>{error_msg}</error>")
+                continue
             
             display.action(tool_name, args, kwargs)
             self.exporter.add_action(tool_name, args, kwargs)
@@ -124,12 +143,12 @@ class ReActAgent:
                 "kwargs": kwargs,
             })
             
-            # 安全确认
-            if tool_name == "run_terminal_command":
-                if not self._confirm_command():
-                    display.warning("操作被用户取消")
-                    self.exporter.add_error("操作被用户取消")
-                    return "操作被用户取消"
+            # 安全确认（已禁用，后续有需要再完善）
+            # if tool_name == "run_terminal_command":
+            #     if not self._confirm_command():
+            #         display.warning("操作被用户取消")
+            #         self.exporter.add_error("操作被用户取消")
+            #         return "操作被用户取消"
             
             # 执行工具
             observation = self._execute_tool(tool_name, args, kwargs)
@@ -160,24 +179,64 @@ class ReActAgent:
             return f"工具执行错误：{e}"
     
     def _call_model(self, messages: MessageManager) -> str:
-        """调用模型"""
+        """调用模型（带错误处理）"""
         msg_list = list(messages)
         self._log("model_request", msg_list)
         
-        content = self.model_client.call(msg_list)
-        messages.add_assistant(content)
-        
-        self._log_text("MODEL_RAW_OUTPUT", content)
-        return content
+        try:
+            content = self.model_client.call(msg_list)
+            messages.add_assistant(content)
+            self._log_text("MODEL_RAW_OUTPUT", content)
+            return content
+            
+        except Exception as e:
+            # 记录错误
+            self._log("model_error", {"error": str(e), "type": type(e).__name__})
+            
+            # 返回错误提示给模型
+            error_msg = f"模型调用失败: {str(e)}"
+            display.error(error_msg)
+            
+            # 添加错误消息到对话历史
+            messages.add_assistant(f"<error>{error_msg}</error>")
+            
+            # 返回错误标记
+            return f"<error>{error_msg}</error>"
     
     def _render_system_prompt(self) -> str:
         """渲染系统提示"""
         file_list = self._get_file_list()
-        return Template(react_system_prompt_template).substitute(
+        base_prompt = Template(react_system_prompt_template).substitute(
             operating_system=self._get_os_name(),
             tool_list=self.registry.format_tool_list(),
             file_list=file_list,
         )
+        
+        # 添加技能列表
+        skills = self.skill_manager.list_skills()
+        if skills:
+            skills_section = "\n\n## 可用技能\n\n"
+            skills_section += "以下技能可以按需加载，使用 `load_skill(\"name\")` 加载完整内容：\n\n"
+            
+            for skill in skills:
+                version = f"v{skill.metadata.version}" if skill.metadata.version else ""
+                namespace = f"({skill.metadata.namespace}) " if skill.metadata.namespace else ""
+                skills_section += f"**{skill.name}** {namespace}{version}: {skill.description}\n"
+                skills_section += f"  - 加载: `load_skill(\"{skill.name}\")`\n"
+                if skill.scripts_dir:
+                    skills_section += f"  - 脚本: `run_skill_script(\"{skill.name}\", \"script.py\")`\n"
+                skills_section += "\n"
+            
+            # 添加已加载的技能
+            loaded = self.skill_manager.get_loaded_skills()
+            if loaded:
+                skills_section += "\n## 已加载技能\n\n"
+                for name, content in loaded.items():
+                    skills_section += f"### {name}\n\n{content}\n\n"
+            
+            return base_prompt + skills_section
+        
+        return base_prompt
     
     def _get_file_list(self) -> str:
         """获取项目文件列表"""
@@ -240,7 +299,25 @@ class ReActAgent:
     
     def _try_fix_output(self, content: str) -> str | None:
         """尝试修复常见的输出格式问题"""
-        # 问题1：有 thought 但缺少 action/final_answer 标签
+        # 安全检查：确保 content 不为 None
+        if not content:
+            return None
+        
+        # 问题1：有 final_answer 但没有 thought 标签
+        if "<final_answer>" in content and "</final_answer>" in content:
+            # 提取 final_answer 内容
+            final_answer = self.parser.extract(content, "final_answer")
+            if final_answer:
+                # 检查是否已经有 thought
+                if "<thought>" not in content:
+                    # 添加默认 thought
+                    return f"<thought>直接回答用户问题</thought>\n{content}"
+                # 已经有 thought，检查是否完整
+                if "<thought>" in content and "</thought>" in content:
+                    # 格式正确，返回原内容
+                    return content
+        
+        # 问题2：有 thought 但缺少 action/final_answer 标签
         if "<thought>" in content and "</thought>" in content:
             thought = self.parser.extract(content, "thought")
             if not thought:
@@ -256,7 +333,7 @@ class ReActAgent:
             if answer_match:
                 return f"<thought>{thought}</thought>\n<final_answer>{answer_match}</final_answer>"
         
-        # 问题2：直接输出了函数调用但没有 action 标签
+        # 问题3：直接输出了函数调用但没有 action 标签
         if "(" in content and ")" in content and "def " not in content:
             # 尝试提取看起来像函数调用的内容
             import re

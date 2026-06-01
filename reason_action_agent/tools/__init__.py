@@ -82,6 +82,13 @@ def get_default_tools():
         list_env,
         get_system_info,
     )
+    from reason_action_agent.tools.skill_tools import (
+        load_skill,
+        list_skills,
+        run_skill_script,
+        read_skill_reference,
+        get_skill_info,
+    )
     
     return [
         # 文件操作
@@ -104,4 +111,10 @@ def get_default_tools():
         set_env,
         list_env,
         get_system_info,
+        # 技能工具
+        load_skill,
+        list_skills,
+        run_skill_script,
+        read_skill_reference,
+        get_skill_info,
     ]

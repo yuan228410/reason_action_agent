@@ -58,6 +58,9 @@ def main(project_directory: str, model: str | None, protocol: str | None, log_di
     
     # 显示可用工具
     display.info(f"已加载 {len(agent.registry.list_tools())} 个工具")
+    skills = agent.skill_manager.list_skills()
+    if skills:
+        display.info(f"已加载 {len(skills)} 个技能")
     display.info("输入 /help 查看命令，支持 Tab 自动补全")
     display.print()
     
@@ -104,7 +107,17 @@ def main(project_directory: str, model: str | None, protocol: str | None, log_di
                 continue
             
             # 执行任务
-            result = agent.run(user_input)
+            try:
+                result = agent.run(user_input)
+            except Exception as e:
+                # 任务执行出错，友好提示
+                display.error(f"任务执行失败: {e}")
+                display.info("可以尝试重新描述任务或换一个任务")
+                # 记录错误日志
+                if config.log.enabled:
+                    import traceback
+                    display.print("[dim]详细错误已记录到日志[/dim]")
+                continue
             
         except KeyboardInterrupt:
             # 执行任务时按 Ctrl+C
@@ -112,10 +125,13 @@ def main(project_directory: str, model: str | None, protocol: str | None, log_di
             display.warning("已取消当前操作")
             continue
         except Exception as e:
-            display.error(str(e), details=type(e).__name__)
-            import traceback
+            # 捕获所有未预期的错误
+            display.error(f"发生未知错误: {e}")
+            display.info("程序将继续运行，可以尝试其他操作")
             if config.log.enabled:
-                display.print("[dim]详细错误已记录到日志[/dim]")
+                import traceback
+                traceback.print_exc()
+            continue
 
 
 def handle_slash_command(cmd: str, args: str, agent: ReActAgent) -> bool:
@@ -182,10 +198,200 @@ def handle_slash_command(cmd: str, args: str, agent: ReActAgent) -> bool:
         display.stats(agent.exporter.get_stats())
         return False
     
+    # 技能列表
+    if cmd == "/skills":
+        list_all_skills(agent)
+        return False
+    
+    # 技能操作
+    if cmd == "/skill":
+        handle_skill_command(args, agent)
+        return False
+    
     # 未知命令
     display.warning(f"未知命令: {cmd}")
     display.info("输入 /help 查看可用命令")
     return False
+
+
+def handle_skill_command(args: str, agent: ReActAgent):
+    """处理技能命令"""
+    parts = args.split(maxsplit=1)
+    action = parts[0] if parts else ""
+    params = parts[1] if len(parts) > 1 else ""
+    
+    manager = agent.skill_manager
+    
+    if action == "install":
+        # /skill install <url|path> [--global|--project]
+        level = "project" if "--project" in params else "global"
+        params = params.replace("--global", "").replace("--project", "").strip()
+        
+        try:
+            if params.startswith("http"):
+                skill = manager.install_from_url(params, level)
+            else:
+                skill = manager.install_from_file(params, level)
+            
+            display.success(f"已安装技能: {skill.name} v{skill.metadata.version}")
+            display.print(f"  描述: {skill.description}")
+            display.print(f"  级别: {skill.level}")
+            if skill.directory:
+                display.print(f"  目录: {skill.directory}")
+        except Exception as e:
+            display.error(f"安装失败: {e}")
+    
+    elif action == "uninstall":
+        # /skill uninstall <name>
+        if manager.uninstall(params):
+            display.success(f"已卸载技能: {params}")
+        else:
+            display.error(f"未找到技能: {params}")
+    
+    elif action == "load":
+        # /skill load <name>
+        content = manager.load_skill(params)
+        if content:
+            display.success(f"已加载技能: {params}")
+        else:
+            display.error(f"未找到技能: {params}")
+    
+    elif action == "info":
+        # /skill info <name>
+        info = manager.get_skill_info(params)
+        if info:
+            display.print(Panel(info, title=f"📖 {params}", border_style="blue"))
+        else:
+            display.error(f"未找到技能: {params}")
+    
+    elif action == "create":
+        # /skill create <name> [--global|--project]
+        level = "project" if "--project" in params else "global"
+        name = params.replace("--global", "").replace("--project", "").strip()
+        
+        try:
+            path = manager.create_skill_template(name, level)
+            display.success(f"已创建技能模板: {name}")
+            display.print(f"  目录: {path}")
+            display.print(f"  请编辑 SKILL.md 添加技能内容")
+        except Exception as e:
+            display.error(str(e))
+    
+    elif action == "run":
+        # /skill run <name> <script.py> [args...]
+        parts = params.split(maxsplit=2)
+        if len(parts) < 2:
+            display.error("用法: /skill run <skill-name> <script.py> [args...]")
+            return
+        
+        skill_name = parts[0]
+        script_name = parts[1]
+        args_list = parts[2].split() if len(parts) > 2 else []
+        
+        display.info(f"执行技能脚本: {skill_name}/{script_name}")
+        result = manager.run_skill_script(skill_name, script_name, args_list)
+        display.print(result)
+    
+    elif action == "read":
+        # /skill read <name> <ref.md>
+        parts = params.split(maxsplit=1)
+        if len(parts) < 2:
+            display.error("用法: /skill read <skill-name> <ref.md>")
+            return
+        
+        skill_name = parts[0]
+        ref_name = parts[1]
+        
+        result = manager.read_skill_reference(skill_name, ref_name)
+        display.print(result)
+    
+    else:
+        show_skill_help()
+
+
+def list_all_skills(agent: ReActAgent):
+    """列出所有技能"""
+    skills = agent.skill_manager.list_skills()
+    
+    if not skills:
+        display.info("暂无已安装的技能")
+        display.print()
+        display.print("使用以下命令安装:")
+        display.print("  /skill install <url|path>")
+        display.print()
+        return
+    
+    from rich.table import Table
+    
+    table = Table(title="📚 可用技能", show_header=True, header_style="bold cyan")
+    table.add_column("名称", style="cyan")
+    table.add_column("版本", style="yellow")
+    table.add_column("描述", style="white")
+    table.add_column("级别", style="magenta")
+    table.add_column("状态", style="green")
+    
+    for skill in skills:
+        status = "✓ 已加载" if skill.loaded else "未加载"
+        version = f"v{skill.metadata.version}" if skill.metadata.version else ""
+        
+        table.add_row(
+            skill.name,
+            version,
+            skill.description[:40] + ("..." if len(skill.description) > 40 else ""),
+            skill.level,
+            status,
+        )
+    
+    display.print(table)
+    display.print()
+    display.info("使用 load_skill(\"name\") 或 /skill load <name> 加载技能")
+
+
+def show_skill_help():
+    """显示技能帮助"""
+    display.print(Panel(
+        """
+[bold]技能管理命令:[/bold]
+
+  [cyan]/skills[/cyan]                     列出所有技能
+  [cyan]/skill install <url|path>[/cyan]    安装技能
+  [cyan]/skill uninstall <name>[/cyan]      卸载技能
+  [cyan]/skill load <name>[/cyan]           加载技能
+  [cyan]/skill info <name>[/cyan]           查看技能详情
+  [cyan]/skill create <name>[/cyan]         创建技能模板
+  [cyan]/skill run <name> <script>[/cyan]   执行技能脚本
+  [cyan]/skill read <name> <ref>[/cyan]     读取参考文档
+
+[bold]安装选项:[/bold]
+
+  --global     安装到全局（默认）
+  --project    安装到项目
+
+[bold]使用示例:[/bold]
+
+  [yellow]安装技能[/yellow]
+  /skill install https://.../skill.md
+  /skill install /path/to/skill-dir --project
+
+  [yellow]查看技能[/yellow]
+  /skill info enterprise-search
+
+  [yellow]加载技能[/yellow]
+  /skill load python-expert
+  或让模型自动调用: load_skill("python-expert")
+
+  [yellow]执行脚本[/yellow]
+  /skill run enterprise-search neisou_search.py --word "关键词"
+
+  [yellow]读取参考[/yellow]
+  /skill read enterprise-search api_docs.md
+
+  [yellow]创建技能[/yellow]
+  /skill create my-workflow --project
+        """,
+        title="📖 技能帮助",
+        border_style="blue",
+    ))
 
 
 def show_help():
@@ -196,6 +402,7 @@ def show_help():
 
   [cyan]/help[/cyan]            显示此帮助
   [cyan]/tools[/cyan]           查看工具列表
+  [cyan]/skills[/cyan]          查看技能列表
   [cyan]/themes[/cyan]          查看主题列表
   [cyan]/theme <name>[/cyan]    切换主题（Tab 补全）
   [cyan]/export <fmt>[/cyan]    导出会话（md/html，Tab 补全）
@@ -218,6 +425,7 @@ def show_help():
   • 对话历史会自动保留，直到使用 [cyan]/clear[/cyan] 清空
   • 文件路径建议使用绝对路径
   • 终端命令执行前会要求确认
+  • 使用 [cyan]/skill[/cyan] 管理技能
         """,
         title="📖 帮助",
         border_style="blue",

@@ -102,7 +102,8 @@ class InputManager:
                 f"{prompt_text}: ",
                 style=self.style,
             )
-            return result.strip()
+            # 确保 result 不为 None
+            return (result or "").strip()
         except KeyboardInterrupt:
             # Ctrl+C 返回特殊标记
             return "__CTRL_C__"

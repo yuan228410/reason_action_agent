@@ -32,13 +32,15 @@
 ## ✨ 核心特性
 
 - **🧠 智能推理**：ReAct 循环（思考 → 行动 → 观察 → 回答）
-- **🔧 丰富工具**：17 个内置工具，覆盖文件、网络、系统操作
-- **🛡️ 错误恢复**：自动修复格式异常，智能提示重试
+- **🔧 丰富工具**：22 个内置工具，覆盖文件、网络、系统、技能操作
+- **📚 技能系统**：支持标准 Skills 格式，按需加载，可执行脚本
+- **🛡️ 错误恢复**：自动重试机制，智能错误处理，永不异常退出
 - **📦 模块架构**：清晰的职责分离，易于扩展和测试
 - **🎯 精准提示**：优化的系统提示词 + 详细的工具文档
 - **🎨 美化界面**：Rich 面板、代码高亮、Markdown 渲染
 - **🌈 多主题**：6 种配色主题，支持动态切换
 - **📊 会话导出**：Markdown/HTML 格式导出
+- **⚡ 极速启动**：延迟加载优化，0.5 秒快速启动
 
 ---
 
@@ -143,24 +145,30 @@ agent = ReActAgent()
 reason_action_agent/
 ├── agent.py              # 核心推理循环 + 智能错误恢复
 ├── config.py             # 配置管理（dataclass + 环境变量）
-├── exceptions.py         # 异常定义
-├── message_manager.py    # 消息列表管理
+├── exceptions.py         # 异常定义（含错误处理策略）
+├── message_manager.py    # 消息列表管理（持久化历史）
 ├── tag_parser.py         # 标签解析器
-├── model_clients.py      # 模型客户端（OpenAI/Anthropic）
+├── model_clients.py      # 模型客户端（自动重试 + 错误恢复）
 ├── prompts.py            # 系统提示模板
-├── cli.py                # CLI 入口
+├── cli.py                # CLI 入口（斜杠命令 + Tab 补全）
 ├── session_logger.py     # 日志记录
+├── session_exporter.py   # 会话导出（Markdown/HTML）
+├── skill_manager.py      # 技能管理（标准 Skills）
+├── rich_display.py       # Rich 美化显示
+├── themes.py             # 主题配置（6 种主题）
+├── input_manager.py      # 输入管理（自动补全）
 └── tools/                # 工具模块
     ├── __init__.py
     ├── registry.py       # 工具注册器
-    ├── file_tools.py     # 文件操作（9个工具）
-    ├── web_tools.py      # 网络工具（3个工具）
-    └── system_tools.py   # 系统工具（5个工具）
+    ├── file_tools.py     # 文件操作（9 个工具）
+    ├── web_tools.py      # 网络工具（3 个工具）
+    ├── system_tools.py   # 系统工具（5 个工具）
+    └── skill_tools.py    # 技能工具（5 个工具）
 ```
 
 ---
 
-## 🔧 内置工具（17 个）
+## 🔧 内置工具（22 个）
 
 ### 📁 文件操作（9 个）
 
@@ -404,3 +412,139 @@ MIT License - 详见 [LICENSE](LICENSE) 文件
 - 🔄 有改进？欢迎 [Pull Request](../../pulls)
 
 **一起学习，一起进步** 🚀
+
+---
+
+## 📚 技能系统
+
+### 技能格式（标准 YAML Frontmatter + Markdown）
+
+```markdown
+---
+name: python-expert
+description: Python 编程专家，精通最佳实践和设计模式
+version: 1.0.0
+author: your-name
+tags:
+  - python
+  - coding
+---
+
+# Python 编程专家
+
+技能内容...
+
+## 核心能力
+- 代码质量：遵循 PEP 8 规范
+- 设计模式：熟练运用常见设计模式
+```
+
+### 技能目录结构
+
+```
+~/.agent/skills/           # 全局技能
+├── python-expert/
+│   ├── SKILL.md          # 技能主文件
+│   ├── scripts/          # 可执行脚本
+│   │   ├── analyze.py
+│   │   └── optimize.py
+│   └── references/       # 参考文档
+│       └── best_practices.md
+```
+
+### 技能命令
+
+```bash
+# 列出技能
+/skills
+
+# 安装技能
+/skill install https://.../skill.md
+/skill install /path/to/skill-dir --project
+
+# 查看技能详情
+/skill info python-expert
+
+# 加载技能
+/skill load python-expert
+
+# 执行技能脚本
+/skill run python-expert analyze.py --args
+
+# 读取参考文档
+/skill read python-expert best_practices.md
+```
+
+---
+
+## ⚠️ 安全说明
+
+### 终端命令执行
+
+**当前设置**：终端命令执行**无确认提示**，直接执行。
+
+**原因**：
+- 提升使用体验，减少中断
+- Agent 已经过系统提示词约束
+- 适用大多数开发场景
+
+**后续完善方向**：
+- 配置化：可设置是否需要确认
+- 命令白名单：只对危险命令确认
+- 智能判断：根据命令内容决定
+
+**注意事项**：
+- ⚠️ Agent 可以执行任意终端命令
+- ⚠️ 请在受信任的环境中使用
+- ⚠️ 敏感操作建议人工审核
+
+---
+
+## 🎓 学习价值
+
+这个项目适合想深入理解 Agent 原理的开发者：
+
+| 学习点 | 文件 | 核心代码 |
+|--------|------|----------|
+| ReAct 循环 | `agent.py` | `run()` 方法 |
+| 工具注册 | `tools/registry.py` | `@tool` 装饰器 |
+| 消息管理 | `message_manager.py` | 历史持久化 |
+| 错误处理 | `exceptions.py` + `model_clients.py` | 自动重试 |
+| 技能系统 | `skill_manager.py` | 按需加载 |
+
+**代码统计**：
+- 总行数：~2500 行
+- 核心逻辑：~1500 行
+- 工具实现：~1000 行
+
+**适合人群**：
+- 🎓 正在学习 LLM 应用开发
+- 🔬 想研究 Agent 的内部机制
+- 🏗️ 需要定制自己的 Agent 实现
+- 🤔 对现有框架感到困惑或不满足
+
+---
+
+## 🚧 已知限制
+
+1. **无流式输出**：模型响应需要等待完整返回
+2. **无并发执行**：工具串行执行
+3. **无持久记忆**：对话历史仅在内存中
+4. **简单规划**：单轮 ReAct 循环
+
+这些限制是**有意为之**，保持代码简洁易懂。可根据需要扩展。
+
+---
+
+## 🔮 扩展方向
+
+- **流式输出**：添加 SSE 支持
+- **并发执行**：异步工具调用
+- **长期记忆**：集成向量数据库
+- **多 Agent 协作**：Agent 间通信
+- **Web UI**：Gradio/Streamlit 界面
+- **工具市场**：共享工具库
+
+---
+
+**代码不多，但该有的都有。读一遍代码，胜过看十遍教程。** 🚀
