@@ -2,16 +2,12 @@
 
 import re
 from pathlib import Path
+from typing import Optional
+
 from rich.console import Console
-from rich.markdown import Markdown
-from rich.panel import Panel
-from rich.syntax import Syntax
-from rich.table import Table
 from rich.text import Text
 from rich.theme import Theme
-from rich.tree import Tree
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
-from typing import Optional
 
 from reason_action_agent.themes import get_theme, THEMES
 
@@ -47,59 +43,41 @@ class RichDisplay:
         """清屏"""
         self.console.clear()
     
-    # ========== 基础组件 ==========
+    # ========== 基础组件（延迟导入） ==========
     
-    def panel(
-        self,
-        title: str,
-        content: str,
-        style: str = "blue",
-        expand: bool = False,
-    ):
+    def panel(self, title: str, content: str, style: str = "blue", expand: bool = False):
         """面板显示"""
-        self.console.print(Panel(
-            content,
-            title=title,
-            border_style=style,
-            expand=expand,
-        ))
+        from rich.panel import Panel
+        self.console.print(Panel(content, title=title, border_style=style, expand=expand))
     
     def markdown(self, content: str):
         """Markdown 渲染"""
+        from rich.markdown import Markdown
         self.console.print(Markdown(content))
     
-    def code(
-        self,
-        code: str,
-        language: str = "python",
-        line_numbers: bool = True,
-        theme: str = "monokai",
-    ):
+    def code(self, code: str, language: str = "python", line_numbers: bool = True, theme: str = "monokai"):
         """代码高亮"""
-        self.console.print(Syntax(
-            code,
-            language,
-            line_numbers=line_numbers,
-            theme=theme,
-        ))
+        from rich.syntax import Syntax
+        self.console.print(Syntax(code, language, line_numbers=line_numbers, theme=theme))
     
     def table(self, title: str = None):
         """创建表格"""
+        from rich.table import Table
         return Table(title=title, show_header=True, header_style="bold cyan")
     
     # ========== ReAct 专用显示 ==========
     
     def thought(self, content: str):
         """显示思考"""
-        self.console.print(Panel(
-            content,
-            title="💭 思考",
-            border_style="cyan",
-        ))
+        from rich.panel import Panel
+        self.console.print(Panel(content, title="💭 思考", border_style="cyan"))
         self.console.print()
     
     def action(self, tool_name: str, args: list, kwargs: dict):
         """显示动作"""
+        from rich.panel import Panel
+        from rich.syntax import Syntax
+        
         # 格式化参数
         params = []
         for arg in args:
@@ -121,14 +99,12 @@ class RichDisplay:
     
     def observation(self, content: str, max_lines: int = 50):
         """显示观察结果 - 智能渲染"""
+        from rich.panel import Panel
+        
         # 智能识别内容类型
         rendered = self._smart_render(content, max_lines)
         
-        self.console.print(Panel(
-            rendered,
-            title="📋 观察结果",
-            border_style="green",
-        ))
+        self.console.print(Panel(rendered, title="📋 观察结果", border_style="green"))
         self.console.print()
     
     def _smart_render(self, content: str, max_lines: int = 50) -> Text:
@@ -283,34 +259,28 @@ class RichDisplay:
     
     def final_answer(self, content: str):
         """显示最终答案"""
+        from rich.panel import Panel
+        from rich.markdown import Markdown
+        
         # 尝试 Markdown 渲染
-        self.console.print(Panel(
-            Markdown(content),
-            title="✅ 最终答案",
-            border_style="magenta",
-        ))
+        self.console.print(Panel(Markdown(content), title="✅ 最终答案", border_style="magenta"))
         self.console.print()
     
     def error(self, message: str, details: str = None):
         """显示错误"""
+        from rich.panel import Panel
+        
         content = f"[error]{message}[/error]"
         if details:
             content += f"\n\n[dim]{details}[/dim]"
         
-        self.console.print(Panel(
-            content,
-            title="❌ 错误",
-            border_style="red",
-        ))
+        self.console.print(Panel(content, title="❌ 错误", border_style="red"))
         self.console.print()
     
     def warning(self, message: str):
         """显示警告"""
-        self.console.print(Panel(
-            message,
-            title="⚠️  警告",
-            border_style="yellow",
-        ))
+        from rich.panel import Panel
+        self.console.print(Panel(message, title="⚠️  警告", border_style="yellow"))
         self.console.print()
     
     def info(self, message: str):
@@ -332,6 +302,8 @@ class RichDisplay:
         total_lines: int = None,
     ):
         """显示文件内容"""
+        from rich.syntax import Syntax
+        
         header = f"[file_path]{file_path}[/file_path]"
         if total_lines:
             header += f" (第 {start_line}-{start_line + content.count(chr(10))} 行，共 {total_lines} 行)"
@@ -358,16 +330,15 @@ class RichDisplay:
     
     def directory_tree(self, path: str, tree_str: str):
         """显示目录树"""
-        self.console.print(Panel(
-            tree_str,
-            title=f"📁 {path}",
-            border_style="blue",
-        ))
+        from rich.panel import Panel
+        self.console.print(Panel(tree_str, title=f"📁 {path}", border_style="blue"))
         self.console.print()
     
     def tool_list(self, tools: list):
         """显示工具列表"""
-        table = self.table("🔧 可用工具")
+        from rich.table import Table
+        
+        table = Table(title="🔧 可用工具", show_header=True, header_style="bold cyan")
         table.add_column("工具名", style="cyan")
         table.add_column("签名", style="yellow")
         table.add_column("说明")
@@ -384,7 +355,9 @@ class RichDisplay:
     
     def stats(self, stats: dict):
         """显示统计信息"""
-        table = self.table("📊 执行统计")
+        from rich.table import Table
+        
+        table = Table(title="📊 执行统计", show_header=True, header_style="bold cyan")
         table.add_column("指标", style="cyan")
         table.add_column("值", style="yellow")
         
@@ -398,6 +371,8 @@ class RichDisplay:
     
     def welcome(self, project_dir: str, model: str, protocol: str):
         """显示欢迎信息"""
+        from rich.panel import Panel
+        
         self.console.print()
         self.console.print(Panel(
             f"[bold cyan]🤖 ReAct Agent[/bold cyan]\n\n"

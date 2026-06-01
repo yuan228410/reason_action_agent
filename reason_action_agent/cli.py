@@ -62,10 +62,29 @@ def main(project_directory: str, model: str | None, protocol: str | None, log_di
     display.print()
     
     # 交互循环
+    ctrl_c_count = 0  # Ctrl+C 计数器
+    
     while True:
         try:
             # 使用增强输入管理器
             user_input = input_manager.get_input()
+            
+            # 处理 Ctrl+C
+            if user_input == "__CTRL_C__":
+                ctrl_c_count += 1
+                if ctrl_c_count >= 2:
+                    # 第二次 Ctrl+C，退出
+                    display.goodbye()
+                    break
+                else:
+                    # 第一次 Ctrl+C，提示
+                    display.print()
+                    display.warning("再按一次 Ctrl+C 退出，或输入任务继续")
+                    continue
+            
+            # 用户输入了内容，重置计数器
+            if user_input and user_input != "__CTRL_C__":
+                ctrl_c_count = 0
             
             if not user_input:
                 continue
@@ -88,6 +107,7 @@ def main(project_directory: str, model: str | None, protocol: str | None, log_di
             result = agent.run(user_input)
             
         except KeyboardInterrupt:
+            # 执行任务时按 Ctrl+C
             display.print()
             display.warning("已取消当前操作")
             continue

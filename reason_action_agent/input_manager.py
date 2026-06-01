@@ -104,8 +104,8 @@ class InputManager:
             )
             return result.strip()
         except KeyboardInterrupt:
-            # Ctrl+C 返回空
-            return ""
+            # Ctrl+C 返回特殊标记
+            return "__CTRL_C__"
         except EOFError:
             # Ctrl+D 返回 quit
             return "/quit"

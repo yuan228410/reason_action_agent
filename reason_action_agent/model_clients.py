@@ -1,9 +1,12 @@
 """模型客户端 - OpenAI 和 Anthropic"""
 
 from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
 
-from anthropic import Anthropic
-from openai import OpenAI
+if TYPE_CHECKING:
+    from anthropic import Anthropic
+    from openai import OpenAI
+
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from reason_action_agent.rich_display import display
@@ -26,6 +29,8 @@ class OpenAIModelClient(ModelClient):
     
     def __init__(self, model: str, base_url: str, api_key: str):
         super().__init__(model)
+        # 延迟导入
+        from openai import OpenAI
         self.client = OpenAI(base_url=base_url, api_key=api_key)
     
     def call(self, messages: list[dict[str, str]]) -> str:
@@ -50,6 +55,8 @@ class AnthropicModelClient(ModelClient):
     def __init__(self, model: str, base_url: str, api_key: str, max_tokens: int = 4096):
         super().__init__(model)
         self.max_tokens = max_tokens
+        # 延迟导入
+        from anthropic import Anthropic
         self.client = Anthropic(base_url=base_url, api_key=api_key)
     
     def call(self, messages: list[dict[str, str]]) -> str:
