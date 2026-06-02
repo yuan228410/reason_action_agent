@@ -14,3 +14,5 @@ wheels/
 
 # Agent logs
 logs/
+
+.agent
