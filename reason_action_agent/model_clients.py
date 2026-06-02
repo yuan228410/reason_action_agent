@@ -87,7 +87,9 @@ class OpenAIModelClient(ModelClient):
                         model=self.model,
                         messages=messages,
                     )
-                    return response.choices[0].message.content
+                    # 确保 content 不为 None
+                    content = response.choices[0].message.content
+                    return content or ""
                     
             except Exception as e:
                 last_error = e
@@ -149,7 +151,9 @@ class AnthropicModelClient(ModelClient):
                         system=system_prompt,
                         messages=messages[1:],
                     )
-                    return "".join(block.text for block in response.content if block.type == "text")
+                    # 确保 content 不为 None
+                    content = "".join(block.text for block in response.content if block.type == "text")
+                    return content or ""
                     
             except Exception as e:
                 last_error = e

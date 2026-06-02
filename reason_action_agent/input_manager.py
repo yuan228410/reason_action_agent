@@ -11,7 +11,10 @@ from typing import List, Dict
 class CommandCompleter(Completer):
     """命令自动补全"""
     
-    def __init__(self):
+    def __init__(self, project_dir: str = None):
+        # 保存项目目录
+        self.project_dir = project_dir
+        
         # 命令列表：命令 -> (描述, 参数提示)
         self.commands: Dict[str, tuple] = {
             "/help": ("显示帮助信息", ""),
@@ -27,99 +30,160 @@ class CommandCompleter(Completer):
             "/quit": ("退出程序", ""),
             "/q": ("退出程序（简写）", ""),
         }
+        
+        # skill 子命令列表（需要技能名作为参数的）
+        self.skill_name_commands = ["load", "info", "run", "read", "uninstall"]
+        # 所有 skill 子命令
+        self.skill_subcommands = ["install", "load", "info", "create", "run", "read", "uninstall"]
+    
+    def _get_skill_names(self):
+        """动态获取技能名称列表"""
+        try:
+            from reason_action_agent.skill_manager import SkillManager
+            # 传入工作空间目录，加载项目级技能
+            manager = SkillManager(project_dir=self.project_dir)
+            skills = manager.list_skills()
+            return [(skill.name, skill.metadata.version) for skill in skills]
+        except Exception:
+            return []
     
     def get_completions(self, document, complete_event):
-        """获取补全建议"""
+        """获取补全建议 - 支持多级补全"""
         text = document.text_before_cursor
         
         # 只对斜杠命令补全
-        if text.startswith("/"):
-            # 提取命令部分
-            parts = text.split()
-            if len(parts) == 1:
-                # 补全命令名
-                for cmd, (desc, args) in self.commands.items():
-                    if cmd.startswith(text):
+        if not text.startswith("/"):
+            return
+        
+        # 检查文本末尾是否有空格（表示要补全下一级）
+        text_ends_with_space = text.endswith(" ")
+        
+        # 分割命令（忽略末尾空格）
+        parts = text.strip().split()
+        
+        # 第一级：补全命令名
+        if len(parts) == 0 or (len(parts) == 1 and not text_ends_with_space):
+            partial = parts[0] if parts else ""
+            for cmd, (desc, args) in self.commands.items():
+                if cmd.startswith(partial):
+                    yield Completion(
+                        cmd,
+                        start_position=-len(partial),
+                        display=cmd,
+                        display_meta=desc,
+                    )
+        
+        # 第二级：补全命令参数或子命令
+        elif len(parts) == 1 and text_ends_with_space:
+            cmd = parts[0]
+            # /theme 命令补全主题名
+            if cmd == "/theme":
+                for theme in ["default", "dark", "light", "monokai", "ocean", "solarized"]:
+                    yield Completion(
+                        theme,
+                        start_position=0,
+                        display=theme,
+                        display_meta="主题",
+                    )
+            
+            # /export 命令补全格式
+            elif cmd == "/export":
+                for fmt in ["md", "html"]:
+                    yield Completion(
+                        fmt,
+                        start_position=0,
+                        display=fmt,
+                        display_meta="导出格式",
+                    )
+            
+            # /skill 命令补全子命令
+            elif cmd == "/skill":
+                for subcmd in self.skill_subcommands:
+                    yield Completion(
+                        subcmd,
+                        start_position=0,
+                        display=subcmd,
+                        display_meta="子命令",
+                    )
+        
+        # 第二级（已输入部分字符）：补全参数
+        elif len(parts) == 2 and not text_ends_with_space:
+            cmd = parts[0]
+            partial = parts[1]
+            
+            # /theme 命令补全主题名
+            if cmd == "/theme":
+                for theme in ["default", "dark", "light", "monokai", "ocean", "solarized"]:
+                    if theme.startswith(partial):
                         yield Completion(
-                            cmd,
-                            start_position=-len(text),
-                            display=f"{cmd}",
-                            display_meta=desc,
+                            theme,
+                            start_position=-len(partial),
+                            display=theme,
+                            display_meta="主题",
                         )
             
-            elif len(parts) == 2:
-                # 补全命令参数
-                cmd = parts[0]
-                partial = parts[1]
-                
-                # theme 命令补全主题名
-                if cmd == "/theme":
-                    themes = ["default", "dark", "light", "monokai", "ocean", "solarized"]
-                    for theme in themes:
-                        if theme.startswith(partial):
-                            yield Completion(
-                                theme,
-                                start_position=-len(partial),
-                                display=theme,
-                                display_meta="主题",
-                            )
-                
-                # export 命令补全格式
-                elif cmd == "/export":
-                    formats = ["md", "html"]
-                    for fmt in formats:
-                        if fmt.startswith(partial):
-                            yield Completion(
-                                fmt,
-                                start_position=-len(partial),
-                                display=fmt,
-                                display_meta="导出格式",
-                            )
-                
-                # skill 命令补全子命令
-                elif cmd == "/skill":
-                    subcmds = ["install", "load", "info", "create", "run", "read", "uninstall"]
-                    for subcmd in subcmds:
-                        if subcmd.startswith(partial):
-                            yield Completion(
-                                subcmd,
-                                start_position=-len(partial),
-                                display=subcmd,
-                                display_meta="子命令",
-                            )
+            # /export 命令补全格式
+            elif cmd == "/export":
+                for fmt in ["md", "html"]:
+                    if fmt.startswith(partial):
+                        yield Completion(
+                            fmt,
+                            start_position=-len(partial),
+                            display=fmt,
+                            display_meta="导出格式",
+                        )
             
-            elif len(parts) >= 3:
-                # 补全技能名（适用于 load/info/run/read/uninstall）
-                cmd = parts[0]
-                subcmd = parts[1] if len(parts) > 1 else ""
-                partial = parts[-1]
-                
-                if cmd == "/skill" and subcmd in ["load", "info", "run", "read", "uninstall"]:
-                    # 动态获取技能列表
-                    try:
-                        from reason_action_agent.skill_manager import SkillManager
-                        manager = SkillManager()
-                        skills = manager.list_skills()
-                        for skill in skills:
-                            if skill.name.startswith(partial):
-                                yield Completion(
-                                    skill.name,
-                                    start_position=-len(partial),
-                                    display=skill.name,
-                                    display_meta=f"技能 (v{skill.metadata.version})",
-                                )
-                    except Exception:
-                        pass
+            # /skill 命令补全子命令
+            elif cmd == "/skill":
+                for subcmd in self.skill_subcommands:
+                    if subcmd.startswith(partial):
+                        yield Completion(
+                            subcmd,
+                            start_position=-len(partial),
+                            display=subcmd,
+                            display_meta="子命令",
+                        )
+        
+        # 第三级：补全技能名（/skill load/info/run/read/uninstall 后）
+        elif len(parts) == 2 and text_ends_with_space:
+            cmd = parts[0]
+            subcmd = parts[1]
+            
+            if cmd == "/skill" and subcmd in self.skill_name_commands:
+                for skill_name, skill_version in self._get_skill_names():
+                    yield Completion(
+                        skill_name,
+                        start_position=0,
+                        display=skill_name,
+                        display_meta=f"技能 (v{skill_version})",
+                    )
+        
+        # 第三级（已输入部分字符）：补全技能名
+        elif len(parts) >= 3 and not text_ends_with_space:
+            cmd = parts[0]
+            subcmd = parts[1] if len(parts) > 1 else ""
+            partial = parts[-1]
+            
+            if cmd == "/skill" and subcmd in self.skill_name_commands:
+                for skill_name, skill_version in self._get_skill_names():
+                    if skill_name.startswith(partial):
+                        yield Completion(
+                            skill_name,
+                            start_position=-len(partial),
+                            display=skill_name,
+                            display_meta=f"技能 (v{skill_version})",
+                        )
 
 
 class InputManager:
     """输入管理器"""
     
-    def __init__(self, history_file: str = ".agent_history"):
+    def __init__(self, history_file: str = ".agent_history", project_dir: str = None):
         self.history_file = Path.home() / history_file
+        self.project_dir = project_dir
         self.session = PromptSession(
             history=FileHistory(str(self.history_file)),
-            completer=CommandCompleter(),
+            completer=CommandCompleter(project_dir=project_dir),
             complete_while_typing=True,
         )
         

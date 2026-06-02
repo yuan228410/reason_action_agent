@@ -258,6 +258,10 @@ class ReActAgent:
     
     def _handle_invalid_output(self, content: str, messages: MessageManager) -> str | None:
         """处理模型输出格式异常"""
+        # 安全检查
+        if not content:
+            content = ""
+        
         self._log("invalid_model_output", {"content": content})
         
         # 显示原始输出（截断）
@@ -365,6 +369,10 @@ class ReActAgent:
     
     def _extract_answer_like_content(self, content: str) -> str | None:
         """提取看起来像答案的内容"""
+        # 安全检查
+        if not content:
+            return None
+        
         # 移除已有的标签
         import re
         cleaned = re.sub(r'<[^>]+>.*?</[^>]+>', '', content, flags=re.DOTALL)

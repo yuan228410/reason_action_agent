@@ -13,6 +13,10 @@ class TagParser:
     @staticmethod
     def extract(content: str, tag: str) -> str | None:
         """提取标签内容"""
+        # 安全检查：确保 content 不为 None
+        if not content:
+            return None
+        
         match = re.search(rf"<{tag}>(.*?)</{tag}>", content, re.DOTALL)
         return match.group(1).strip() if match else None
     

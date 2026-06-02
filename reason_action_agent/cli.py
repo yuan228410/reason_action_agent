@@ -47,7 +47,7 @@ def main(project_directory: str, model: str | None, protocol: str | None, log_di
     
     # 初始化
     agent = ReActAgent(config=config)
-    input_manager = InputManager()
+    input_manager = InputManager(project_dir=project_directory)
     
     # 显示欢迎信息
     display.welcome(
